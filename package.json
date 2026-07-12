@@ -1,0 +1,32 @@
+{
+  "name": "dynamic-prompt-templates",
+  "version": "0.1.0",
+  "description": "Obsidian plugin for rendering markdown prompt templates with dynamic vault context.",
+  "main": "main.js",
+  "type": "module",
+  "bin": {
+    "dynamic-prompt": "./bin/dynamic-prompt.mjs"
+  },
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "prompt",
+    "templates"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "moment": "^2.30.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "esbuild": "0.25.5",
+    "obsidian": "latest",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

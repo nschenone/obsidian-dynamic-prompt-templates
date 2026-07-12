@@ -1,0 +1,19 @@
+.dynamic-prompt-preview__warnings {
+  margin-bottom: 1rem;
+}
+
+.dynamic-prompt-preview__warning {
+  margin-bottom: 0.5rem;
+}
+
+.dynamic-prompt-preview__output {
+  width: 100%;
+  min-height: 24rem;
+  font-family: var(--font-monospace);
+  resize: vertical;
+}
+
+.dynamic-prompt-settings__warning {
+  margin-top: 0.75rem;
+  color: var(--text-warning);
+}
