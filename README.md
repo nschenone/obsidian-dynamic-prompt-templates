@@ -125,6 +125,19 @@ Return structured JSON instead of markdown-only output:
 dynamic-prompt render "Templates/Prompts/Weekly Reflection.md" --json
 ```
 
+## Release
+
+Use npm's version command to keep plugin metadata synchronized and create the release commit and tag:
+
+```bash
+npm test && npm run build
+npm version patch
+git push origin master --follow-tags
+gh release create "$(node -p 'require("./package.json").version')" --prerelease --generate-notes
+```
+
+Publishing the GitHub release triggers the workflow that builds and uploads `manifest.json`, `main.js`, and `styles.css`.
+
 ## Development
 
 Install dependencies:
