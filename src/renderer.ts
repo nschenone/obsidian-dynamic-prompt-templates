@@ -1,6 +1,7 @@
 import { normalizePath, parseLinktext, TFile, type App } from "obsidian";
 import type { DynamicPromptSettings, RenderResult, RenderWarning, RenderWarningType, TemplateInfo } from "./contracts";
 import { getTemplateInfoByPath } from "./templates";
+import { formatReferenceDate, parseReferenceDate } from "./utils/date";
 import {
   extractFenceBody,
   extractHeadingSection,
@@ -154,23 +155,6 @@ async function renderMarkdownContent(state: RenderState, content: string): Promi
   return renderedSegments.join("\n");
 }
 
-function normalizeReferenceDate(referenceDate?: string): Date {
-  if (!referenceDate) {
-    return new Date();
-  }
-
-  const parsed = new Date(referenceDate);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error(`Invalid reference date: ${referenceDate}`);
-  }
-
-  return parsed;
-}
-
-function toIsoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
 function normalizeRenderedMarkdown(markdown: string): string {
   return markdown.replace(/\t/g, "    ");
 }
@@ -193,7 +177,7 @@ export async function renderTemplate(
   }
 
   const template = templateInfo satisfies TemplateInfo;
-  const date = normalizeReferenceDate(referenceDate);
+  const date = parseReferenceDate(referenceDate);
   const rawContent = await app.vault.cachedRead(abstractFile);
   const strippedTemplate = stripFrontmatter(rawContent);
   const resolvedDates = resolveDateTokens(strippedTemplate, date, settings.weekStart);
@@ -208,7 +192,7 @@ export async function renderTemplate(
   const markdown = normalizeRenderedMarkdown((await renderMarkdownContent(state, resolvedDates)).trim());
   return {
     template,
-    referenceDate: toIsoDate(date),
+    referenceDate: formatReferenceDate(date),
     markdown,
     warnings: state.warnings
   };
