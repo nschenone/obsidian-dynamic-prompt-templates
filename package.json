@@ -1,6 +1,6 @@
 {
   "name": "dynamic-prompt-templates",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Obsidian plugin for rendering markdown prompt templates with dynamic vault context.",
   "main": "main.js",
   "type": "module",
