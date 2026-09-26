@@ -8,12 +8,28 @@ import { copyTextToClipboard } from "./utils/clipboard";
 import { isLoopbackHost } from "./utils/network";
 import { LocalApiServer } from "./api-server";
 
+type DynamicPromptTemplatesApi = {
+  version: 1;
+  renderTemplateByPath: (templatePath: string, referenceDate?: string) => Promise<RenderResult>;
+};
+
+declare global {
+  interface Window {
+    dynamicPromptTemplatesApi?: DynamicPromptTemplatesApi;
+  }
+}
+
 export default class DynamicPromptTemplatesPlugin extends Plugin {
   settings!: DynamicPromptSettings;
   private apiServer: LocalApiServer | null = null;
+  private readonly integrationApi: DynamicPromptTemplatesApi = {
+    version: 1,
+    renderTemplateByPath: (templatePath, referenceDate) => this.renderTemplateByPath(templatePath, referenceDate)
+  };
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    window.dynamicPromptTemplatesApi = this.integrationApi;
     this.apiServer = new LocalApiServer(this);
     this.addSettingTab(new DynamicPromptSettingsTab(this.app, this));
 
@@ -37,6 +53,7 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    if (window.dynamicPromptTemplatesApi === this.integrationApi) delete window.dynamicPromptTemplatesApi;
     await this.apiServer?.stop();
   }
 

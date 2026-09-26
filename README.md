@@ -99,6 +99,18 @@ If you configure an auth token, send:
 -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+## Companion plugin API
+
+Desktop and mobile companion plugins can render through the same shared renderer without using the desktop-only HTTP API:
+
+```ts
+const api = window.dynamicPromptTemplatesApi;
+if (!api || api.version !== 1) throw new Error("Dynamic Prompt Templates API v1 is unavailable");
+const result = await api.renderTemplateByPath("Templates/Prompts/Weekly Reflection.md", "2026-07-07");
+```
+
+The API is registered while the plugin is loaded and removed when it unloads.
+
 ## CLI
 
 List templates:
