@@ -1,7 +1,7 @@
 {
   "id": "dynamic-prompt-templates",
   "name": "Dynamic Prompt Templates",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.6.0",
   "description": "Render markdown prompt templates into flattened markdown with note includes, date tokens, and Dataview output.",
   "author": "Nick Schenone",
