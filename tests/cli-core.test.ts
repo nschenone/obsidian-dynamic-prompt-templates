@@ -11,6 +11,11 @@ describe("cli core", () => {
     expect(parsed.json).toBe(true);
   });
 
+  it("forwards generic input values", async () => {
+    const parsed = parseCliArgs(["render", "A.md", "--input", "audience=team"]);
+    expect(parsed.inputs).toEqual({ audience: "team" });
+  });
+
   it("formats template lists with path-based ids", () => {
     const templates: TemplateInfo[] = [{ id: "A.md", path: "A.md", title: "Alpha" }];
     expect(formatTemplateList(templates)).toBe("A.md\tAlpha");

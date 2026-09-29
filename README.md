@@ -1,171 +1,58 @@
 # Dynamic Prompt Templates
 
-An Obsidian plugin that renders markdown prompt templates into flattened markdown for copy/paste and agent use.
+An Obsidian plugin that renders Markdown prompt templates with [Knap](https://knap.md), then renders native fenced Dataview queries to static Markdown.
 
-## What it does
+## Templates
 
-- Treats every markdown file in a configured template folder as a prompt template
-- Resolves `{{...}}` date tokens from a render-time reference date
-- Expands wikilinks and embeds into inline markdown content
-- Renders native `dataview` blocks to static markdown when Dataview is available
-- Shows soft-failure warning callouts for missing notes, missing headings, unavailable Dataview, and unsupported `dataviewjs`
-- Exposes the same renderer through Obsidian commands, a preview modal, a local HTTP API, and a CLI wrapper
+Every Markdown file in the configured template folder is a Knap template. The shared renderer exposes:
 
-## Template syntax
+- `referenceDate` — render date as `YYYY-MM-DD`
+- `template.path`, `template.title`, and `template.description`
+- `inputs` — frontmatter defaults shallow-merged with optional runtime inputs
 
-Templates are just markdown.
-
-### Date tokens
-
-Use moment-style format tokens anywhere in the template body:
+Host-owned values above cannot be overridden by runtime inputs. Set defaults in template frontmatter:
 
 ```md
-Today is {{YYYY-MM-DD}}.
-This report covers week {{gggg-[W]ww}}.
+---
+dynamicPrompt:
+  inputs:
+    audience: team
+---
+# {{ template.title }}
+Prepared for {{ inputs.audience }} on {{ referenceDate }}.
 ```
 
-Week-number tokens follow the plugin's configured `Week start` setting. With the default `Sunday` setting, `2026-07-12` resolves to `2026-W29`; with `Monday`, the same date resolves to `2026-W28`.
+Knap variables, filters, conditions, and loops use Knap syntax. This plugin additionally provides:
 
-### Note includes
+- `last_days`: a positive integer (maximum 365) produces inclusive ISO dates ending on `referenceDate`, useful in loops.
+- `transclude`: includes an Obsidian note, heading, or block relative to the template, without frontmatter: `{{ "Notes/Plan#Next" | transclude }}`.
+- `redact_lines`: removes whole lines whose trimmed text starts with the supplied prefix, case-insensitively: `{{ inputs.notes | redact_lines: "secret:" }}`.
 
-Wikilinks and embeds are treated as include directives:
+Ordinary Obsidian wikilinks remain links. Native `dataview` fences are rendered after Knap. `dataviewjs` is rejected with a warning.
 
-```md
-## Wins
-[[{{YYYY/gggg-[W]ww}}#Wins]]
+## Commands and API
 
-## Priorities
-![[Projects/Quarter Plan#Current Priorities]]
-```
+The fast command renders with today and frontmatter defaults. The prompted command requests only a reference date and days (1–365); days is available as `inputs.days`.
 
-`[[Note]]` includes the full note body without frontmatter.
-
-`[[Note#Heading]]` includes that heading and its descendant content until the next heading of the same or higher level.
-
-### Dataview
-
-Native `dataview` blocks are rendered to static markdown:
-
-````md
-```dataview
-TABLE status, priority
-FROM "Collections/Tasks"
-WHERE status != "done"
-SORT priority ASC
-```
-````
-
-`dataviewjs` is not supported in v1 and renders as a warning callout.
-
-## Commands
-
-- `Dynamic Prompt Templates: Render dynamic prompt template`
-- `Dynamic Prompt Templates: Render dynamic prompt template with date`
-
-The default command uses the current date as the reference date.
-
-The date command prompts for an explicit `YYYY-MM-DD` reference date.
-
-## Local API
-
-The local API is disabled by default.
-
-Settings:
-
-- week start for week-based date tokens
-- host
-- port
-- optional bearer token
-
-The `Week start` setting applies to every render entry point because the command palette, local API, and CLI all use the same shared renderer.
-
-Endpoints:
-
-- `GET /health`
-- `GET /templates`
-- `POST /render`
-
-Example render request:
+The local HTTP API has `GET /health`, `GET /templates`, and `POST /render`:
 
 ```bash
-curl -X POST http://127.0.0.1:27131/render \
-  -H "Content-Type: application/json" \
-  -d '{"templatePath":"Templates/Prompts/Weekly Reflection.md","referenceDate":"2026-07-07"}'
+curl -X POST http://127.0.0.1:27131/render -H 'Content-Type: application/json' \
+  -d '{"templatePath":"Templates/Prompts/Weekly.md","referenceDate":"2026-07-07","inputs":{"audience":"team"}}'
 ```
 
-If you configure an auth token, send:
+Companion plugins can call `window.dynamicPromptTemplatesApi.renderTemplateByPath(path, referenceDate, inputs)`.
+
+The CLI forwards inputs with repeated `--input key=value`:
 
 ```bash
--H "Authorization: Bearer YOUR_TOKEN"
+dynamic-prompt render "Templates/Prompts/Weekly.md" --reference-date 2026-07-07 --input audience=team
 ```
-
-## Companion plugin API
-
-Desktop and mobile companion plugins can render through the same shared renderer without using the desktop-only HTTP API:
-
-```ts
-const api = window.dynamicPromptTemplatesApi;
-if (!api || api.version !== 1) throw new Error("Dynamic Prompt Templates API v1 is unavailable");
-const result = await api.renderTemplateByPath("Templates/Prompts/Weekly Reflection.md", "2026-07-07");
-```
-
-The API is registered while the plugin is loaded and removed when it unloads.
-
-## CLI
-
-List templates:
-
-```bash
-dynamic-prompt list
-```
-
-Render a template:
-
-```bash
-dynamic-prompt render "Templates/Prompts/Weekly Reflection.md"
-```
-
-Render with a reference date:
-
-```bash
-dynamic-prompt render "Templates/Prompts/Weekly Reflection.md" --reference-date 2026-07-07
-```
-
-Return structured JSON instead of markdown-only output:
-
-```bash
-dynamic-prompt render "Templates/Prompts/Weekly Reflection.md" --json
-```
-
-## Release
-
-Use npm's version command to keep plugin metadata synchronized and create the release commit and tag:
-
-```bash
-npm test && npm run build
-npm version patch
-git push origin master --follow-tags
-gh release create "$(node -p 'require("./package.json").version')" --prerelease --generate-notes
-```
-
-Publishing the GitHub release triggers the workflow that builds and uploads `manifest.json`, `main.js`, and `styles.css`.
 
 ## Development
 
-Install dependencies:
-
 ```bash
 npm install
-```
-
-Run tests:
-
-```bash
 npm test
-```
-
-Build the plugin and CLI:
-
-```bash
 npm run build
 ```

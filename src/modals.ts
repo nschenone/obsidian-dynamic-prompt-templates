@@ -1,6 +1,7 @@
-import { App, ButtonComponent, Modal, Setting, SuggestModal } from "obsidian";
+import { App, ButtonComponent, Modal, Notice, Setting, SuggestModal } from "obsidian";
 import type { RenderResult, TemplateInfo } from "./contracts";
 import { copyTextToClipboard } from "./utils/clipboard";
+import { MAX_DAYS } from "./utils/filters";
 
 class TemplateSelectModal extends SuggestModal<TemplateInfo> {
   private readonly resolver: (value: TemplateInfo | null) => void;
@@ -68,10 +69,11 @@ export function chooseTemplate(app: App, templates: TemplateInfo[]): Promise<Tem
 
 export class ReferenceDateModal extends Modal {
   private value: string;
-  private readonly resolver: (value: string | null) => void;
+  private days = "7";
+  private readonly resolver: (value: { referenceDate: string; days: number } | null) => void;
   private settled = false;
 
-  constructor(app: App, initialValue: string, resolver: (value: string | null) => void) {
+  constructor(app: App, initialValue: string, resolver: (value: { referenceDate: string; days: number } | null) => void) {
     super(app);
     this.value = initialValue;
     this.resolver = resolver;
@@ -91,9 +93,14 @@ export class ReferenceDateModal extends Modal {
         });
       });
 
+    new Setting(contentEl).setName("Days").setDesc(`Positive integer, up to ${MAX_DAYS}.`).addText((text) => text.setValue(this.days).onChange((value) => { this.days = value; }));
     const buttonRow = contentEl.createDiv({ cls: "modal-button-container" });
     new ButtonComponent(buttonRow).setButtonText("Cancel").onClick(() => this.finish(null));
-    new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => this.finish(this.value));
+    new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => {
+      const days = Number(this.days);
+      if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) { new Notice(`Days must be a positive integer no greater than ${MAX_DAYS}.`); return; }
+      this.finish({ referenceDate: this.value, days });
+    });
   }
 
   onClose(): void {
@@ -103,7 +110,7 @@ export class ReferenceDateModal extends Modal {
     }
   }
 
-  private finish(value: string | null): void {
+  private finish(value: { referenceDate: string; days: number } | null): void {
     if (this.settled) {
       return;
     }
@@ -114,7 +121,7 @@ export class ReferenceDateModal extends Modal {
   }
 }
 
-export function chooseReferenceDate(app: App, initialValue: string): Promise<string | null> {
+export function chooseReferenceDate(app: App, initialValue: string): Promise<{ referenceDate: string; days: number } | null> {
   return new Promise((resolve) => {
     const modal = new ReferenceDateModal(app, initialValue, resolve);
     modal.open();

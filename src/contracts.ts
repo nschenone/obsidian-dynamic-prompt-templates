@@ -1,10 +1,7 @@
-export type WeekStartMode = "sunday" | "monday";
-
 export interface DynamicPromptSettings {
   templateFolder: string;
   showPreviewAfterRender: boolean;
   autoCopyToClipboard: boolean;
-  weekStart: WeekStartMode;
   enableLocalApi: boolean;
   apiHost: string;
   apiPort: number;
@@ -20,10 +17,11 @@ export interface TemplateInfo {
 
 export type RenderWarningType =
   | "missing-note"
-  | "missing-heading"
+  | "missing-subpath"
   | "missing-dataview"
   | "unsupported-dataviewjs"
-  | "dataview-error";
+  | "dataview-error"
+  | "template";
 
 export interface RenderWarning {
   type: RenderWarningType;
@@ -37,17 +35,11 @@ export interface RenderResult {
   warnings: RenderWarning[];
 }
 
-export interface ApiSuccess<T> {
-  success: true;
-  data: T;
-}
-
-export interface ApiFailure {
-  success: false;
-  error: string;
-}
+export interface ApiSuccess<T> { success: true; data: T; }
+export interface ApiFailure { success: false; error: string; }
 
 export interface RenderRequestBody {
   templatePath: string;
   referenceDate?: string;
+  inputs?: Record<string, unknown>;
 }

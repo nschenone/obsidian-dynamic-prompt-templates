@@ -13,6 +13,7 @@ export interface CliOptions {
   token?: string;
   referenceDate?: string;
   json: boolean;
+  inputs: Record<string, string>;
   baseUrl?: string;
 }
 
@@ -36,7 +37,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
     templatePath,
     host: "127.0.0.1",
     port: 27131,
-    json: false
+    json: false,
+    inputs: {}
   };
 
   for (let index = 0; index < optionArgs.length; index += 1) {
@@ -59,6 +61,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
         options.referenceDate = next;
         index += 1;
         break;
+      case "--input": {
+        const separator = next?.indexOf("=") ?? -1;
+        if (separator <= 0) throw new Error("--input requires key=value");
+        options.inputs[next!.slice(0, separator)] = next!.slice(separator + 1);
+        index += 1;
+        break;
+      }
       case "--json":
         options.json = true;
         break;
@@ -123,7 +132,7 @@ export async function runCli(argv: string[], io: CliIo, fetchImpl: FetchLike): P
       "Content-Type": "application/json",
       ...headers
     },
-    body: JSON.stringify({ templatePath: options.templatePath, referenceDate: options.referenceDate })
+    body: JSON.stringify({ templatePath: options.templatePath, referenceDate: options.referenceDate, inputs: options.inputs })
   });
 
   io.stdout(formatRenderOutput(renderData, options.json));

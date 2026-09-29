@@ -96,7 +96,7 @@ export class LocalApiServer {
     if (request.method === "POST" && url.pathname === "/render") {
       try {
         const body = (await this.readBody(request)) as RenderRequestBody;
-        const result = await renderTemplate(this.plugin.app, this.plugin.settings, body.templatePath, body.referenceDate);
+        const result = await renderTemplate(this.plugin.app, this.plugin.settings, body.templatePath, body.referenceDate, body.inputs);
         this.writeJson(response, 200, { success: true, data: result } satisfies ApiSuccess<RenderResult>);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

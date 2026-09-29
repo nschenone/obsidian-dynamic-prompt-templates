@@ -10,7 +10,7 @@ import { LocalApiServer } from "./api-server";
 
 type DynamicPromptTemplatesApi = {
   version: 1;
-  renderTemplateByPath: (templatePath: string, referenceDate?: string) => Promise<RenderResult>;
+  renderTemplateByPath: (templatePath: string, referenceDate?: string, inputs?: Record<string, unknown>) => Promise<RenderResult>;
 };
 
 declare global {
@@ -24,7 +24,7 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
   private apiServer: LocalApiServer | null = null;
   private readonly integrationApi: DynamicPromptTemplatesApi = {
     version: 1,
-    renderTemplateByPath: (templatePath, referenceDate) => this.renderTemplateByPath(templatePath, referenceDate)
+    renderTemplateByPath: (templatePath, referenceDate, inputs) => this.renderTemplateByPath(templatePath, referenceDate, inputs)
   };
 
   async onload(): Promise<void> {
@@ -70,8 +70,8 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
     return getTemplateInfos(this.app, this.settings);
   }
 
-  async renderTemplateByPath(templatePath: string, referenceDate?: string): Promise<RenderResult> {
-    return renderTemplate(this.app, this.settings, templatePath, referenceDate);
+  async renderTemplateByPath(templatePath: string, referenceDate?: string, inputs?: Record<string, unknown>): Promise<RenderResult> {
+    return renderTemplate(this.app, this.settings, templatePath, referenceDate, inputs);
   }
 
   private async runRenderFlow(promptForDate: boolean): Promise<void> {
@@ -86,13 +86,11 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
       return;
     }
 
-    const referenceDate = promptForDate ? await chooseReferenceDate(this.app, new Date().toISOString().slice(0, 10)) : undefined;
-    if (promptForDate && !referenceDate) {
-      return;
-    }
+    const prompted = promptForDate ? await chooseReferenceDate(this.app, new Date().toISOString().slice(0, 10)) : null;
+    if (promptForDate && !prompted) return;
 
     try {
-      const result = await this.renderTemplateByPath(template.path, referenceDate ?? undefined);
+      const result = await this.renderTemplateByPath(template.path, prompted?.referenceDate, prompted ? { days: prompted.days } : undefined);
       await this.handleRenderResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -174,20 +172,6 @@ class DynamicPromptSettingsTab extends PluginSettingTab {
           this.plugin.settings.autoCopyToClipboard = value;
           await this.plugin.saveSettings();
         })
-      );
-
-    new Setting(containerEl)
-      .setName("Week start")
-      .setDesc("Controls how week-based date tokens like {{gggg-[W]ww}} are resolved during rendering.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("sunday", "Sunday")
-          .addOption("monday", "Monday")
-          .setValue(this.plugin.settings.weekStart)
-          .onChange(async (value) => {
-            this.plugin.settings.weekStart = value === "monday" ? "monday" : "sunday";
-            await this.plugin.saveSettings();
-          })
       );
 
     new Setting(containerEl)

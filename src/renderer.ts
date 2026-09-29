@@ -1,28 +1,19 @@
+import { createEngine, standardFilters, type FilterRegistry } from "knap";
 import { normalizePath, parseLinktext, TFile, type App } from "obsidian";
 import type { DynamicPromptSettings, RenderResult, RenderWarning, RenderWarningType, TemplateInfo } from "./contracts";
 import { getTemplateInfoByPath } from "./templates";
 import { formatReferenceDate, parseReferenceDate } from "./utils/date";
-import {
-  extractFenceBody,
-  extractHeadingSection,
-  resolveDateTokens,
-  splitMarkdownSegments,
-  stripFrontmatter,
-  warningCallout
-} from "./utils/markdown";
-
-interface IncludeCacheEntry {
-  output: string;
-}
+import { lastDays, redactLines } from "./utils/filters";
+import { extractFenceBody, splitMarkdownSegments, stripFrontmatter, warningCallout } from "./utils/markdown";
 
 interface RenderState {
   app: App;
   warnings: RenderWarning[];
   seenWarnings: Set<string>;
-  includeCache: Map<string, Promise<IncludeCacheEntry>>;
+  transcludeCache: Map<string, Promise<string>>;
   templatePath: string;
+  referenceDate: Date;
 }
-
 interface DataviewApiLike {
   tryQueryMarkdown?: (query: string, originFile?: string) => Promise<string>;
   queryMarkdown?: (query: string, originFile?: string) => Promise<{ successful: boolean; value?: string; error?: string }>;
@@ -30,170 +21,96 @@ interface DataviewApiLike {
 
 function addWarning(state: RenderState, type: RenderWarningType, message: string): string {
   const key = `${type}:${message}`;
-  if (!state.seenWarnings.has(key)) {
-    state.seenWarnings.add(key);
-    state.warnings.push({ type, message });
-  }
-
+  if (!state.seenWarnings.has(key)) { state.seenWarnings.add(key); state.warnings.push({ type, message }); }
   return warningCallout(message);
 }
-
 function getDataviewApi(app: App): DataviewApiLike | null {
-  const plugin = (app as App & { plugins?: { plugins?: Record<string, { api?: DataviewApiLike }> } }).plugins?.plugins?.dataview;
-  return plugin?.api ?? null;
+  return (app as App & { plugins?: { plugins?: Record<string, { api?: DataviewApiLike }> } }).plugins?.plugins?.dataview?.api ?? null;
 }
-
 async function renderDataviewBlock(state: RenderState, query: string): Promise<string> {
   const api = getDataviewApi(state.app);
-  if (!api) {
-    return addWarning(state, "missing-dataview", "Dataview rendering is unavailable because the Dataview plugin is missing or disabled.");
-  }
-
+  if (!api) return addWarning(state, "missing-dataview", "Dataview rendering is unavailable because the Dataview plugin is missing or disabled.");
   try {
-    if (api.tryQueryMarkdown) {
-      return (await api.tryQueryMarkdown(query, state.templatePath)).trim();
-    }
-
+    if (api.tryQueryMarkdown) return (await api.tryQueryMarkdown(query, state.templatePath)).trim();
     if (api.queryMarkdown) {
       const result = await api.queryMarkdown(query, state.templatePath);
-      if (result.successful && typeof result.value === "string") {
-        return result.value.trim();
-      }
-
+      if (result.successful && typeof result.value === "string") return result.value.trim();
       return addWarning(state, "dataview-error", result.error ?? "Dataview query execution failed.");
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return addWarning(state, "dataview-error", `Dataview query execution failed: ${message}`);
-  }
-
+  } catch (error) { return addWarning(state, "dataview-error", `Dataview query execution failed: ${error instanceof Error ? error.message : String(error)}`); }
   return addWarning(state, "dataview-error", "Dataview is enabled but no compatible markdown query API was found.");
 }
 
-async function expandReference(state: RenderState, rawTarget: string): Promise<string> {
+async function transclude(state: RenderState, rawTarget: string): Promise<string> {
   const target = rawTarget.trim();
-  const cacheKey = target;
-  let cached = state.includeCache.get(cacheKey);
-  if (!cached) {
-    cached = resolveReference(state, target);
-    state.includeCache.set(cacheKey, cached);
-  }
-
-  const result = await cached;
-  return result.output;
+  if (!target) return addWarning(state, "missing-note", "Missing note: empty transclude target");
+  let cached = state.transcludeCache.get(target);
+  if (!cached) { cached = resolveTransclusion(state, target); state.transcludeCache.set(target, cached); }
+  return cached;
 }
-
-async function resolveReference(state: RenderState, target: string): Promise<IncludeCacheEntry> {
+async function resolveTransclusion(state: RenderState, target: string): Promise<string> {
   const [linkTarget] = target.split("|");
   const parsed = parseLinktext(linkTarget.trim());
-  const rawPath = parsed.path.trim();
-  const heading = parsed.subpath?.startsWith("#") ? parsed.subpath.slice(1) : parsed.subpath;
-  const resolvedFile = state.app.metadataCache.getFirstLinkpathDest(rawPath, state.templatePath);
-
-  if (!(resolvedFile instanceof TFile)) {
-    return {
-      output: addWarning(state, "missing-note", `Missing note: ${rawPath}`)
-    };
+  const file = state.app.metadataCache.getFirstLinkpathDest(parsed.path.trim(), state.templatePath);
+  if (!(file instanceof TFile)) return addWarning(state, "missing-note", `Missing note: ${parsed.path.trim()}`);
+  const source = await state.app.vault.cachedRead(file);
+  const subpath = parsed.subpath;
+  if (!subpath) return stripFrontmatter(source).trim();
+  if (subpath.startsWith("#")) {
+    const heading = decodeURIComponent(subpath.slice(1));
+    const cache = state.app.metadataCache.getFileCache(file);
+    const headings = cache?.headings ?? [];
+    const targetHeading = headings.find((entry) => entry.heading.trim().toLocaleLowerCase() === heading.trim().toLocaleLowerCase());
+    if (!targetHeading) return addWarning(state, "missing-subpath", `Missing heading "${heading}" in ${file.path}`);
+    const start = targetHeading.position.start.offset;
+    const next = headings.find((entry) => entry.position.start.offset > start && entry.level <= targetHeading.level);
+    return source.slice(start, next?.position.start.offset).trim();
   }
-
-  const content = stripFrontmatter(await state.app.vault.cachedRead(resolvedFile));
-  if (!heading) {
-    return { output: content.trim() };
+  if (subpath.startsWith("^")) {
+    const block = (state.app.metadataCache.getFileCache(file)?.blocks ?? {})[subpath.slice(1)];
+    if (!block) return addWarning(state, "missing-subpath", `Missing block "${subpath}" in ${file.path}`);
+    return source.slice(block.position.start.offset, block.position.end.offset).trim();
   }
-
-  const section = extractHeadingSection(content, decodeURIComponent(heading));
-  if (!section) {
-    return {
-      output: addWarning(state, "missing-heading", `Missing heading "${decodeURIComponent(heading)}" in ${resolvedFile.path}`)
-    };
+  return addWarning(state, "missing-subpath", `Unsupported transclude subpath "${subpath}" in ${file.path}`);
+}
+function createRendererEngine(state: RenderState) {
+  const filters: FilterRegistry = {
+    ...standardFilters,
+    last_days: (value) => lastDays(value, state.referenceDate),
+    redact_lines: (value, prefix, context) => redactLines(value, context?.rawArguments?.[0] ?? prefix),
+    transclude: async (value) => transclude(state, value)
+  };
+  return createEngine({ filters });
+}
+async function renderPostKnapMarkdown(state: RenderState, markdown: string): Promise<string> {
+  const output: string[] = [];
+  for (const segment of splitMarkdownSegments(markdown)) {
+    if (segment.type === "text") output.push(segment.content);
+    else if ((segment.language ?? "").trim().toLowerCase() === "dataview") output.push(await renderDataviewBlock(state, extractFenceBody(segment.content)));
+    else if ((segment.language ?? "").trim().toLowerCase() === "dataviewjs") output.push(addWarning(state, "unsupported-dataviewjs", "Unsupported block: dataviewjs is not supported."));
+    else output.push(segment.content);
   }
-
-  return { output: section.trim() };
+  return output.join("\n");
+}
+function templateDefaults(app: App, file: TFile): Record<string, unknown> {
+  const candidate = app.metadataCache.getFileCache(file)?.frontmatter?.dynamicPrompt;
+  const inputs = candidate && typeof candidate === "object" ? (candidate as { inputs?: unknown }).inputs : undefined;
+  return inputs && typeof inputs === "object" && !Array.isArray(inputs) ? { ...(inputs as Record<string, unknown>) } : {};
 }
 
-async function renderTextSegment(state: RenderState, content: string): Promise<string> {
-  const referencePattern = /!?\[\[([^\]]+)\]\]/g;
-  let output = "";
-  let lastIndex = 0;
-
-  for (const match of content.matchAll(referencePattern)) {
-    const [fullMatch, inner] = match;
-    const start = match.index ?? 0;
-    output += content.slice(lastIndex, start);
-    output += await expandReference(state, inner);
-    lastIndex = start + fullMatch.length;
-  }
-
-  output += content.slice(lastIndex);
-  return output;
-}
-
-async function renderMarkdownContent(state: RenderState, content: string): Promise<string> {
-  const segments = splitMarkdownSegments(content);
-  const renderedSegments: string[] = [];
-
-  for (const segment of segments) {
-    if (segment.type === "text") {
-      renderedSegments.push(await renderTextSegment(state, segment.content));
-      continue;
-    }
-
-    const language = (segment.language ?? "").trim().toLowerCase();
-    if (language === "dataview") {
-      renderedSegments.push(await renderDataviewBlock(state, extractFenceBody(segment.content)));
-      continue;
-    }
-
-    if (language === "dataviewjs") {
-      renderedSegments.push(addWarning(state, "unsupported-dataviewjs", "Unsupported block: dataviewjs is not supported in v1."));
-      continue;
-    }
-
-    renderedSegments.push(segment.content);
-  }
-
-  return renderedSegments.join("\n");
-}
-
-function normalizeRenderedMarkdown(markdown: string): string {
-  return markdown.replace(/\t/g, "    ");
-}
-
-export async function renderTemplate(
-  app: App,
-  settings: DynamicPromptSettings,
-  templatePath: string,
-  referenceDate?: string
-): Promise<RenderResult> {
+export async function renderTemplate(app: App, settings: DynamicPromptSettings, templatePath: string, referenceDate?: string, runtimeInputs: Record<string, unknown> = {}): Promise<RenderResult> {
   const normalizedPath = normalizePath(templatePath);
-  const templateInfo = getTemplateInfoByPath(app, settings, normalizedPath);
-  if (!templateInfo) {
-    throw new Error(`Template not found: ${normalizedPath}`);
-  }
-
-  const abstractFile = app.vault.getAbstractFileByPath(normalizedPath);
-  if (!(abstractFile instanceof TFile)) {
-    throw new Error(`Template not found: ${normalizedPath}`);
-  }
-
-  const template = templateInfo satisfies TemplateInfo;
+  const template = getTemplateInfoByPath(app, settings, normalizedPath);
+  const file = app.vault.getAbstractFileByPath(normalizedPath);
+  if (!template || !(file instanceof TFile)) throw new Error(`Template not found: ${normalizedPath}`);
   const date = parseReferenceDate(referenceDate);
-  const rawContent = await app.vault.cachedRead(abstractFile);
-  const strippedTemplate = stripFrontmatter(rawContent);
-  const resolvedDates = resolveDateTokens(strippedTemplate, date, settings.weekStart);
-  const state: RenderState = {
-    app,
-    warnings: [],
-    seenWarnings: new Set(),
-    includeCache: new Map(),
-    templatePath: normalizedPath
-  };
-
-  const markdown = normalizeRenderedMarkdown((await renderMarkdownContent(state, resolvedDates)).trim());
-  return {
-    template,
-    referenceDate: formatReferenceDate(date),
-    markdown,
-    warnings: state.warnings
-  };
+  const state: RenderState = { app, warnings: [], seenWarnings: new Set(), transcludeCache: new Map(), templatePath: normalizedPath, referenceDate: date };
+  const source = stripFrontmatter(await app.vault.cachedRead(file));
+  const result = await createRendererEngine(state).render(source, {
+    variables: { referenceDate: formatReferenceDate(date), template: template satisfies TemplateInfo, inputs: { ...templateDefaults(app, file), ...runtimeInputs } }
+  });
+  for (const diagnostic of result.errors) addWarning(state, "template", `Template ${diagnostic.line}:${diagnostic.column}: ${diagnostic.message}`);
+  for (const diagnostic of result.warnings) addWarning(state, "template", `Template ${diagnostic.line}:${diagnostic.column}: ${diagnostic.message}`);
+  const rendered = result.errors.length ? "" : await renderPostKnapMarkdown(state, result.output);
+  return { template, referenceDate: formatReferenceDate(date), markdown: rendered.replace(/\t/g, "    ").trim(), warnings: state.warnings };
 }
