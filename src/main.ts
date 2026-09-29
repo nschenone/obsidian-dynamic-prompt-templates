@@ -1,7 +1,8 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import type { DynamicPromptSettings, RenderResult } from "./contracts";
 import { choosePromptInputs, chooseTemplate, PreviewModal } from "./modals";
-import { parsePromptConfiguration, shouldPromptForInputs, type PromptConfiguration } from "./prompt-config";
+import { parsePromptConfiguration, type PromptConfiguration } from "./prompt-config";
+import { renderWithOptionalPrompt } from "./render-flow";
 import { renderTemplate } from "./renderer";
 import { DEFAULT_SETTINGS } from "./settings";
 import { getTemplateInfos } from "./templates";
@@ -87,8 +88,6 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
     const template = await chooseTemplate(this.app, templates);
     if (!template) return;
 
-    let referenceDate: string | undefined;
-    let inputs: Record<string, unknown> | undefined;
     let configuration = NO_PROMPT_CONFIGURATION;
     if (promptForInputs) {
       const file = this.app.vault.getAbstractFileByPath(template.path);
@@ -98,15 +97,16 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
         new Notice(`Invalid prompt configuration in ${template.path}: ${configuration.diagnostics.join(" ")}`);
       }
     }
-    if (shouldPromptForInputs(promptForInputs, configuration)) {
-      const prompted = await choosePromptInputs(this.app, configuration, new Date().toISOString().slice(0, 10));
-      if (!prompted) return;
-      referenceDate = prompted.referenceDate;
-      inputs = prompted.inputs;
-    }
 
     try {
-      const result = await this.renderTemplateByPath(template.path, referenceDate, inputs);
+      const result = await renderWithOptionalPrompt(
+        template.path,
+        promptForInputs,
+        configuration,
+        () => choosePromptInputs(this.app, configuration, new Date().toISOString().slice(0, 10)),
+        (path, referenceDate, inputs) => this.renderTemplateByPath(path, referenceDate, inputs)
+      );
+      if (!result) return;
       await this.handleRenderResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
