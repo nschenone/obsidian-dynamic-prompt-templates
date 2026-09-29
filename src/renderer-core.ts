@@ -102,7 +102,7 @@ function createRendererEngine(state: RenderState) {
     ...standardFilters,
     last_days: (value) => lastDays(value, state.referenceDate),
     redact_lines: (value, prefix, context) => redactLines(value, context?.rawArguments?.[0] ?? prefix),
-    transclude: async (value) => transclude(state, value)
+    transclude: async (value, subpath, context) => transclude(state, `${value}${String(context?.rawArguments?.[0] ?? subpath ?? "")}`)
   };
   return createEngine({ filters });
 }

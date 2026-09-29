@@ -49,6 +49,21 @@ describe("shared renderer with an Obsidian host", () => {
     expect(app.vault.cachedRead.mock.calls.filter(([target]) => target.path === "Templates/Child.md")).toHaveLength(3);
   });
 
+  it("applies a transclude subpath passed as a filter argument", async () => {
+    const child = "## Target\nHeading body\n## Later\nLater body";
+    const targetStart = child.indexOf("## Target");
+    const laterStart = child.indexOf("## Later");
+    const app = host({
+      "Templates/Root.md": { source: '{{ "Child.md" | transclude:"#Target" }}' },
+      "Templates/Child.md": { source: child, headings: [
+        { heading: "Target", level: 2, position: { start: { offset: targetStart } } },
+        { heading: "Later", level: 2, position: { start: { offset: laterStart } } }
+      ] }
+    });
+    const result = await render(app);
+    expect(result.markdown).toBe("## Target\nHeading body");
+  });
+
   it("returns useful missing target and subpath diagnostics", async () => {
     const app = host({ "Templates/Root.md": { source: '{{ "Missing.md" | transclude }}\n{{ "Child.md#Absent" | transclude }}\n{{ "Child.md#^absent" | transclude }}' }, "Templates/Child.md": { source: "# Present" } });
     const result = await render(app);
