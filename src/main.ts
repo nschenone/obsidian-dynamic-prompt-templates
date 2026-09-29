@@ -1,7 +1,7 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import type { DynamicPromptSettings, RenderResult } from "./contracts";
 import { choosePromptInputs, chooseTemplate, PreviewModal } from "./modals";
-import { parsePromptConfiguration } from "./prompt-config";
+import { parsePromptConfiguration, shouldPromptForInputs, type PromptConfiguration } from "./prompt-config";
 import { renderTemplate } from "./renderer";
 import { DEFAULT_SETTINGS } from "./settings";
 import { getTemplateInfos } from "./templates";
@@ -13,6 +13,8 @@ type DynamicPromptTemplatesApi = {
   version: 1;
   renderTemplateByPath: (templatePath: string, referenceDate?: string, inputs?: Record<string, unknown>) => Promise<RenderResult>;
 };
+
+const NO_PROMPT_CONFIGURATION: PromptConfiguration = { referenceDate: false, inputs: [], diagnostics: [] };
 
 declare global {
   interface Window {
@@ -87,19 +89,20 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
 
     let referenceDate: string | undefined;
     let inputs: Record<string, unknown> | undefined;
+    let configuration = NO_PROMPT_CONFIGURATION;
     if (promptForInputs) {
       const file = this.app.vault.getAbstractFileByPath(template.path);
       const frontmatter = file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
-      const configuration = parsePromptConfiguration(frontmatter);
+      configuration = parsePromptConfiguration(frontmatter);
       if (configuration.diagnostics.length > 0) {
         new Notice(`Invalid prompt configuration in ${template.path}: ${configuration.diagnostics.join(" ")}`);
       }
-      if (configuration.referenceDate || configuration.inputs.length > 0) {
-        const prompted = await choosePromptInputs(this.app, configuration, new Date().toISOString().slice(0, 10));
-        if (!prompted) return;
-        referenceDate = prompted.referenceDate;
-        inputs = prompted.inputs;
-      }
+    }
+    if (shouldPromptForInputs(promptForInputs, configuration)) {
+      const prompted = await choosePromptInputs(this.app, configuration, new Date().toISOString().slice(0, 10));
+      if (!prompted) return;
+      referenceDate = prompted.referenceDate;
+      inputs = prompted.inputs;
     }
 
     try {

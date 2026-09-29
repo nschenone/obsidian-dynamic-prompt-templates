@@ -1,7 +1,7 @@
 import { App, ButtonComponent, Modal, Setting, SuggestModal } from "obsidian";
 import type { RenderResult, TemplateInfo } from "./contracts";
 import { copyTextToClipboard } from "./utils/clipboard";
-import type { PromptConfiguration, PromptInputValue } from "./prompt-config";
+import { coercePromptInputValue, createPromptValues, type PromptConfiguration, type PromptInputValue, type PromptValues } from "./prompt-config";
 
 class TemplateSelectModal extends SuggestModal<TemplateInfo> {
   private readonly resolver: (value: TemplateInfo | null) => void;
@@ -67,11 +67,6 @@ export function chooseTemplate(app: App, templates: TemplateInfo[]): Promise<Tem
   });
 }
 
-export interface PromptValues {
-  referenceDate?: string;
-  inputs: Record<string, PromptInputValue>;
-}
-
 export class PromptInputsModal extends Modal {
   private referenceDate: string;
   private readonly inputs: Record<string, PromptInputValue>;
@@ -106,17 +101,14 @@ export class PromptInputsModal extends Modal {
         setting.addText((text) => {
           text.setValue(String(field.value));
           if (field.kind === "number") text.inputEl.type = "number";
-          text.onChange((value) => { this.inputs[field.key] = field.kind === "number" ? Number(value) : value; });
+          text.onChange((value) => { this.inputs[field.key] = coercePromptInputValue(field, value); });
         });
       }
     }
 
     const buttonRow = contentEl.createDiv({ cls: "modal-button-container" });
     new ButtonComponent(buttonRow).setButtonText("Cancel").onClick(() => this.finish(null));
-    new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => this.finish({
-      referenceDate: this.configuration.referenceDate ? this.referenceDate : undefined,
-      inputs: this.inputs
-    }));
+    new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => this.finish(createPromptValues(this.configuration, this.referenceDate, this.inputs)));
   }
 
   onClose(): void {

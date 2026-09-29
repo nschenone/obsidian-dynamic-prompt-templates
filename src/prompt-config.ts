@@ -13,6 +13,29 @@ export interface PromptConfiguration {
   diagnostics: string[];
 }
 
+export interface PromptValues {
+  referenceDate?: string;
+  inputs: Record<string, PromptInputValue>;
+}
+
+/** Returns whether the prompted command needs a modal for this configuration. */
+export function shouldPromptForInputs(promptRequested: boolean, configuration: PromptConfiguration): boolean {
+  return promptRequested && (configuration.referenceDate || configuration.inputs.length > 0);
+}
+
+/** Coerces a changed control value back to the type of its configured default. */
+export function coercePromptInputValue(field: PromptInputField, value: string | boolean): PromptInputValue {
+  return field.kind === "number" ? Number(value) : value;
+}
+
+/** Produces the only runtime overrides a configured prompt may submit. */
+export function createPromptValues(configuration: PromptConfiguration, referenceDate: string, values: Record<string, PromptInputValue>): PromptValues {
+  return {
+    referenceDate: configuration.referenceDate ? referenceDate : undefined,
+    inputs: Object.fromEntries(configuration.inputs.map((field) => [field.key, values[field.key]]))
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

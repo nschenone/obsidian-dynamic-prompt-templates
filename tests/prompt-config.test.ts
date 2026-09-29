@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePromptConfiguration } from "../src/prompt-config";
+import { coercePromptInputValue, createPromptValues, parsePromptConfiguration, shouldPromptForInputs } from "../src/prompt-config";
 
 describe("prompt configuration", () => {
   it("preserves the configured input order, defaults, and primitive types", () => {
@@ -47,5 +47,37 @@ describe("prompt configuration", () => {
       "dynamicPrompt.prompt.referenceDate must be a boolean.",
       "dynamicPrompt.prompt.inputs must be an ordered list of input names."
     ]);
+  });
+
+  it("submits typed allowlisted values and omits an unprompted reference date", () => {
+    const configuration = parsePromptConfiguration({
+      dynamicPrompt: {
+        inputs: { count: 1, enabled: false, label: "default", hidden: "unchanged" },
+        prompt: { inputs: ["count", "enabled", "label"] }
+      }
+    });
+    const values = {
+      count: coercePromptInputValue(configuration.inputs[0]!, "42"),
+      enabled: coercePromptInputValue(configuration.inputs[1]!, true),
+      label: coercePromptInputValue(configuration.inputs[2]!, "updated"),
+      hidden: "must not be submitted"
+    };
+
+    expect(createPromptValues(configuration, "2026-07-07", values)).toEqual({
+      referenceDate: undefined,
+      inputs: { count: 42, enabled: true, label: "updated" }
+    });
+  });
+
+  it("keeps no-prompt and no-valid-field command paths direct", () => {
+    const configured = parsePromptConfiguration({
+      dynamicPrompt: { inputs: { days: 1 }, prompt: { referenceDate: true, inputs: ["days"] } }
+    });
+    const noValidFields = parsePromptConfiguration({
+      dynamicPrompt: { inputs: { nested: {} }, prompt: { inputs: ["nested"] } }
+    });
+
+    expect(shouldPromptForInputs(false, configured)).toBe(false);
+    expect(shouldPromptForInputs(true, noValidFields)).toBe(false);
   });
 });
