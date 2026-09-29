@@ -5,9 +5,8 @@ export interface MarkdownSegment {
 }
 
 export function stripFrontmatter(content: string): string {
-  if (!content.startsWith("---\n")) return content;
-  const closingFenceIndex = content.indexOf("\n---\n", 4);
-  return closingFenceIndex === -1 ? content : content.slice(closingFenceIndex + 5);
+  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+  return match ? content.slice(match[0].length) : content;
 }
 
 export function splitMarkdownSegments(markdown: string): MarkdownSegment[] {

@@ -2,9 +2,14 @@ import { formatReferenceDate } from "./date";
 
 export const MAX_DAYS = 365;
 
+export function validateDays(value: unknown): number | null {
+  const days = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(days) && days >= 1 && days <= MAX_DAYS ? days : null;
+}
+
 export function lastDays(value: unknown, referenceDate: Date): string[] {
-  const count = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(count) || count < 1 || count > MAX_DAYS) throw new Error(`last_days requires a positive integer no greater than ${MAX_DAYS}.`);
+  const count = validateDays(value);
+  if (count === null) throw new Error(`last_days requires a positive integer no greater than ${MAX_DAYS}.`);
   return Array.from({ length: count }, (_unused, index) => {
     const date = new Date(referenceDate);
     date.setDate(date.getDate() - (count - index - 1));

@@ -1,7 +1,7 @@
 import { App, ButtonComponent, Modal, Notice, Setting, SuggestModal } from "obsidian";
 import type { RenderResult, TemplateInfo } from "./contracts";
 import { copyTextToClipboard } from "./utils/clipboard";
-import { MAX_DAYS } from "./utils/filters";
+import { MAX_DAYS, validateDays } from "./utils/filters";
 
 class TemplateSelectModal extends SuggestModal<TemplateInfo> {
   private readonly resolver: (value: TemplateInfo | null) => void;
@@ -97,8 +97,8 @@ export class ReferenceDateModal extends Modal {
     const buttonRow = contentEl.createDiv({ cls: "modal-button-container" });
     new ButtonComponent(buttonRow).setButtonText("Cancel").onClick(() => this.finish(null));
     new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => {
-      const days = Number(this.days);
-      if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) { new Notice(`Days must be a positive integer no greater than ${MAX_DAYS}.`); return; }
+      const days = validateDays(this.days);
+      if (days === null) { new Notice(`Days must be a positive integer no greater than ${MAX_DAYS}.`); return; }
       this.finish({ referenceDate: this.value, days });
     });
   }
