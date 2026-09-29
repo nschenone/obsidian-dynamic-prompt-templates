@@ -1,7 +1,7 @@
 {
   "id": "dynamic-prompt-templates",
   "name": "Dynamic Prompt Templates",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "minAppVersion": "1.6.0",
   "description": "Render Markdown prompt templates with Knap, vault transclusions, and Dataview output.",
   "author": "Nick Schenone",
