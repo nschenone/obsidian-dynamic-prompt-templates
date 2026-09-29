@@ -1,7 +1,7 @@
-import { App, ButtonComponent, Modal, Notice, Setting, SuggestModal } from "obsidian";
+import { App, ButtonComponent, Modal, Setting, SuggestModal } from "obsidian";
 import type { RenderResult, TemplateInfo } from "./contracts";
 import { copyTextToClipboard } from "./utils/clipboard";
-import { MAX_DAYS, validateDays } from "./utils/filters";
+import type { PromptConfiguration, PromptInputValue } from "./prompt-config";
 
 class TemplateSelectModal extends SuggestModal<TemplateInfo> {
   private readonly resolver: (value: TemplateInfo | null) => void;
@@ -67,64 +67,74 @@ export function chooseTemplate(app: App, templates: TemplateInfo[]): Promise<Tem
   });
 }
 
-export class ReferenceDateModal extends Modal {
-  private value: string;
-  private days = "7";
-  private readonly resolver: (value: { referenceDate: string; days: number } | null) => void;
+export interface PromptValues {
+  referenceDate?: string;
+  inputs: Record<string, PromptInputValue>;
+}
+
+export class PromptInputsModal extends Modal {
+  private referenceDate: string;
+  private readonly inputs: Record<string, PromptInputValue>;
+  private readonly resolver: (value: PromptValues | null) => void;
   private settled = false;
 
-  constructor(app: App, initialValue: string, resolver: (value: { referenceDate: string; days: number } | null) => void) {
+  constructor(app: App, private readonly configuration: PromptConfiguration, initialReferenceDate: string, resolver: (value: PromptValues | null) => void) {
     super(app);
-    this.value = initialValue;
+    this.referenceDate = initialReferenceDate;
+    this.inputs = Object.fromEntries(configuration.inputs.map((field) => [field.key, field.value]));
     this.resolver = resolver;
   }
 
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Reference Date" });
-    new Setting(contentEl)
-      .setName("Render reference date")
-      .addText((text) => {
-        text.setPlaceholder("YYYY-MM-DD").setValue(this.value);
-        text.inputEl.type = "date";
-        text.onChange((value) => {
-          this.value = value;
-        });
-      });
+    contentEl.createEl("h2", { text: "Render template" });
 
-    new Setting(contentEl).setName("Days").setDesc(`Positive integer, up to ${MAX_DAYS}.`).addText((text) => text.setValue(this.days).onChange((value) => { this.days = value; }));
+    if (this.configuration.referenceDate) {
+      new Setting(contentEl).setName("Render reference date").addText((text) => {
+        text.setPlaceholder("YYYY-MM-DD").setValue(this.referenceDate);
+        text.inputEl.type = "date";
+        text.onChange((value) => { this.referenceDate = value; });
+      });
+    }
+
+    for (const field of this.configuration.inputs) {
+      const setting = new Setting(contentEl).setName(field.key);
+      if (field.kind === "boolean") {
+        setting.addToggle((toggle) => toggle.setValue(field.value as boolean).onChange((value) => { this.inputs[field.key] = value; }));
+      } else {
+        setting.addText((text) => {
+          text.setValue(String(field.value));
+          if (field.kind === "number") text.inputEl.type = "number";
+          text.onChange((value) => { this.inputs[field.key] = field.kind === "number" ? Number(value) : value; });
+        });
+      }
+    }
+
     const buttonRow = contentEl.createDiv({ cls: "modal-button-container" });
     new ButtonComponent(buttonRow).setButtonText("Cancel").onClick(() => this.finish(null));
-    new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => {
-      const days = validateDays(this.days);
-      if (days === null) { new Notice(`Days must be a positive integer no greater than ${MAX_DAYS}.`); return; }
-      this.finish({ referenceDate: this.value, days });
-    });
+    new ButtonComponent(buttonRow).setButtonText("Render").setCta().onClick(() => this.finish({
+      referenceDate: this.configuration.referenceDate ? this.referenceDate : undefined,
+      inputs: this.inputs
+    }));
   }
 
   onClose(): void {
     this.contentEl.empty();
-    if (!this.settled) {
-      this.finish(null);
-    }
+    if (!this.settled) this.finish(null);
   }
 
-  private finish(value: { referenceDate: string; days: number } | null): void {
-    if (this.settled) {
-      return;
-    }
-
+  private finish(value: PromptValues | null): void {
+    if (this.settled) return;
     this.settled = true;
     this.resolver(value);
     this.close();
   }
 }
 
-export function chooseReferenceDate(app: App, initialValue: string): Promise<{ referenceDate: string; days: number } | null> {
+export function choosePromptInputs(app: App, configuration: PromptConfiguration, initialReferenceDate: string): Promise<PromptValues | null> {
   return new Promise((resolve) => {
-    const modal = new ReferenceDateModal(app, initialValue, resolve);
-    modal.open();
+    new PromptInputsModal(app, configuration, initialReferenceDate, resolve).open();
   });
 }
 

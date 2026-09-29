@@ -1,6 +1,7 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import type { DynamicPromptSettings, RenderResult } from "./contracts";
-import { chooseReferenceDate, chooseTemplate, PreviewModal } from "./modals";
+import { choosePromptInputs, chooseTemplate, PreviewModal } from "./modals";
+import { parsePromptConfiguration } from "./prompt-config";
 import { renderTemplate } from "./renderer";
 import { DEFAULT_SETTINGS } from "./settings";
 import { getTemplateInfos } from "./templates";
@@ -43,7 +44,7 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
 
     this.addCommand({
       id: "render-dynamic-prompt-template-with-date",
-      name: "Render dynamic prompt template with date",
+      name: "Render dynamic prompt template with inputs",
       callback: async () => {
         await this.runRenderFlow(true);
       }
@@ -74,7 +75,7 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
     return renderTemplate(this.app, this.settings, templatePath, referenceDate, inputs);
   }
 
-  private async runRenderFlow(promptForDate: boolean): Promise<void> {
+  private async runRenderFlow(promptForInputs: boolean): Promise<void> {
     const templates = await this.listTemplates();
     if (templates.length === 0) {
       new Notice(`No templates found in ${this.settings.templateFolder}`);
@@ -82,15 +83,27 @@ export default class DynamicPromptTemplatesPlugin extends Plugin {
     }
 
     const template = await chooseTemplate(this.app, templates);
-    if (!template) {
-      return;
+    if (!template) return;
+
+    let referenceDate: string | undefined;
+    let inputs: Record<string, unknown> | undefined;
+    if (promptForInputs) {
+      const file = this.app.vault.getAbstractFileByPath(template.path);
+      const frontmatter = file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
+      const configuration = parsePromptConfiguration(frontmatter);
+      if (configuration.diagnostics.length > 0) {
+        new Notice(`Invalid prompt configuration in ${template.path}: ${configuration.diagnostics.join(" ")}`);
+      }
+      if (configuration.referenceDate || configuration.inputs.length > 0) {
+        const prompted = await choosePromptInputs(this.app, configuration, new Date().toISOString().slice(0, 10));
+        if (!prompted) return;
+        referenceDate = prompted.referenceDate;
+        inputs = prompted.inputs;
+      }
     }
 
-    const prompted = promptForDate ? await chooseReferenceDate(this.app, new Date().toISOString().slice(0, 10)) : null;
-    if (promptForDate && !prompted) return;
-
     try {
-      const result = await this.renderTemplateByPath(template.path, prompted?.referenceDate, prompted ? { days: prompted.days } : undefined);
+      const result = await this.renderTemplateByPath(template.path, referenceDate, inputs);
       await this.handleRenderResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

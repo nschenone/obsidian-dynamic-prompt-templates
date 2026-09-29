@@ -32,7 +32,24 @@ Ordinary Obsidian wikilinks remain links. Native `dataview` fences are rendered 
 
 ## Commands and API
 
-The fast command renders with today and frontmatter defaults. The prompted command requests only a reference date and days (1–365); days is available as `inputs.days`.
+The fast command renders with today and frontmatter defaults. **Render dynamic prompt template with inputs** preserves its command ID for existing keybindings and shows only the opt-in fields configured by the selected template. Configure an optional reference date and an ordered allowlist of primitive defaults:
+
+```yaml
+dynamicPrompt:
+  inputs:
+    days: 1
+    audience: personal
+    includeTasks: true
+    internalValue: hidden
+  prompt:
+    referenceDate: true
+    inputs:
+      - days
+      - audience
+      - includeTasks
+```
+
+Prompt fields use their stored defaults and preserve string, finite-number, or boolean types when submitted. Inputs not listed under `prompt.inputs` are never shown or overridden. If neither `referenceDate: true` nor any valid prompt input is configured, the prompted command renders immediately using today and the defaults.
 
 The local HTTP API has `GET /health`, `GET /templates`, and `POST /render`:
 
